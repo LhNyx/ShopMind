@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# 环境与密钥
+.env
+
+# 数据产物（可由脚本重建；模型文件体积大）
+data/models/
+data/reports/
+data/eval/metrics*.json
+
+# 系统
+.DS_Store
+
+# 运行时产物
+*.sqlite
+*.sqlite3
+uv.lock

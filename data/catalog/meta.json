@@ -1,0 +1,7 @@
+{
+  "version": "ed729b668b6a1db2",
+  "built_at": "2026-10-16T03:41:12+00:00",
+  "count": 1200,
+  "embedding_model": "bge-small-zh-v1.5",
+  "dim": 512
+}
