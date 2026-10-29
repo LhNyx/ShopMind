@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShopMind 导购 Agent</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: rgba(255, 255, 255, 0.045);
+    --panel-border: rgba(255, 255, 255, 0.09);
+    --text: #e8ecf4;
+    --muted: #8b93a7;
+    --accent: #6c8cff;
+    --accent-2: #38d6b4;
+    --warn: #ffb454;
+    --danger: #ff7a7a;
+    --card: #111a30;
+    --card-border: rgba(255, 255, 255, 0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(108, 140, 255, 0.16), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(56, 214, 180, 0.10), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--panel-border);
+    background: rgba(11, 16, 32, 0.7);
+    backdrop-filter: blur(12px);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .logo {
+    width: 34px; height: 34px; display: block;
+    filter: drop-shadow(0 2px 8px rgba(108, 140, 255, 0.4));
+  }
+  .avatar .glyph { width: 17px; height: 17px; }
+  header h1 { font-size: 17px; font-weight: 700; letter-spacing: 0.02em; }
+  header .sub { font-size: 12px; color: var(--muted); }
+  .spacer { flex: 1; }
+  .badge {
+    font-size: 12px; color: var(--muted);
+    border: 1px solid var(--panel-border); border-radius: 999px;
+    padding: 4px 12px;
+  }
+  button.ghost {
+    font-size: 13px; color: var(--text); cursor: pointer;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 999px; padding: 6px 16px;
+    transition: border-color .2s, background .2s;
+  }
+  button.ghost:hover { border-color: var(--accent); background: rgba(108,140,255,.12); }
+
+  main {
+    flex: 1; display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 20px;
+    padding: 20px 28px 0;
+    max-width: 1280px; width: 100%;
+    margin: 0 auto;
+  }
+  @media (max-width: 960px) {
+    main { grid-template-columns: 1fr; }
+    aside { order: -1; }
+  }
+
+  /* ── 聊天区 ─────────────────────────────── */
+  #chat { display: flex; flex-direction: column; min-height: 0; }
+  #messages {
+    flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+    gap: 14px; padding: 6px 4px 18px;
+    scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.15) transparent;
+  }
+
+  .msg { display: flex; gap: 10px; max-width: 86%; animation: rise .35s ease both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+  .bubble {
+    border-radius: 16px; padding: 11px 15px; font-size: 14.5px; line-height: 1.65;
+    background: var(--panel); border: 1px solid var(--panel-border);
+  }
+  .msg.user .bubble {
+    background: linear-gradient(135deg, rgba(108,140,255,.28), rgba(108,140,255,.14));
+    border-color: rgba(108,140,255,.35);
+  }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 9px; flex: none; margin-top: 3px;
+    display: grid; place-items: center; font-size: 13px; font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #0b1020;
+  }
+  .msg.user .avatar { background: var(--panel); color: var(--muted); border: 1px solid var(--panel-border); }
+
+  /* 流水线阶段指示器 */
+  .pipeline {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 12px; margin: 0 0 2px;
+    border: 1px dashed var(--panel-border); border-radius: 12px;
+    background: rgba(255,255,255,.02);
+    font-size: 12.5px; color: var(--muted);
+  }
+  .pipeline .step { display: flex; align-items: center; gap: 6px; transition: color .3s; }
+  .pipeline .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: rgba(255,255,255,.15); transition: background .3s;
+  }
+  .pipeline .step.active { color: var(--text); }
+  .pipeline .step.active .dot { background: var(--accent); animation: pulse 1s infinite; }
+  .pipeline .step.done { color: var(--accent-2); }
+  .pipeline .step.done .dot { background: var(--accent-2); animation: none; }
+  .pipeline .sep { color: rgba(255,255,255,.18); }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  /* 追问气泡 */
+  .bubble.clarify { border-color: rgba(255,180,84,.45); background: rgba(255,180,84,.08); }
+  .bubble.clarify .tag { color: var(--warn); font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px; }
+
+  /* 推荐商品卡 */
+  .cards { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+  .card {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 14px; padding: 14px 16px;
+    display: grid; grid-template-columns: 26px 1fr auto; gap: 4px 12px;
+    animation: rise .4s ease both;
+  }
+  .rank {
+    grid-row: span 3;
+    width: 26px; height: 26px; border-radius: 8px;
+    display: grid; place-items: center;
+    font-size: 13px; font-weight: 700;
+    background: rgba(108,140,255,.16); color: var(--accent);
+  }
+  .card .name { font-size: 14.5px; font-weight: 600; line-height: 1.45; }
+  .card .chips { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .chip {
+    font-size: 11.5px; padding: 2px 9px; border-radius: 999px;
+    border: 1px solid var(--panel-border); color: var(--muted);
+  }
+  .card .reason { grid-column: 2 / -1; font-size: 13px; color: #c6cdda; margin-top: 8px; line-height: 1.6; }
+  .card .price { font-size: 17px; font-weight: 700; color: var(--accent-2); white-space: nowrap; }
+  .card .price small { font-size: 11px; font-weight: 400; color: var(--muted); }
+  .card .meta { grid-column: 3; text-align: right; font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .src-badge { font-size: 10.5px; border-radius: 5px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+  .src-badge.llm { background: rgba(108,140,255,.18); color: var(--accent); }
+  .src-badge.template { background: rgba(255,180,84,.15); color: var(--warn); }
+  .scorebar { width: 90px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.08); margin-top: 5px; overflow: hidden; }
+  .scorebar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+
+  /* 输入区 */
+  .composer {
+    position: sticky; bottom: 0; padding: 12px 0 18px;
+    background: linear-gradient(transparent, var(--bg) 35%);
+  }
+  .awaiting {
+    display: none; font-size: 12px; color: var(--warn); margin: 0 6px 8px;
+  }
+  .awaiting.on { display: block; }
+  .inputbox {
+    display: flex; gap: 10px; align-items: flex-end;
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 16px; padding: 10px 12px;
+    transition: border-color .2s;
+  }
+  .inputbox:focus-within { border-color: var(--accent); }
+  textarea {
+    flex: 1; resize: none; border: none; outline: none; background: none;
+    color: var(--text); font: inherit; font-size: 14.5px; line-height: 1.5;
+    max-height: 120px;
+  }
+  textarea::placeholder { color: var(--muted); }
+  button.send {
+    border: none; cursor: pointer; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #0b1020; font-weight: 700; font-size: 14px;
+    padding: 9px 20px; transition: opacity .2s, transform .1s;
+  }
+  button.send:hover:not(:disabled) { transform: translateY(-1px); }
+  button.send:disabled { opacity: .4; cursor: default; }
+  .hints { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 4px 0; }
+  .hint {
+    font-size: 12px; color: var(--muted); cursor: pointer;
+    border: 1px solid var(--panel-border); border-radius: 999px; padding: 4px 12px;
+    transition: color .2s, border-color .2s;
+  }
+  .hint:hover { color: var(--text); border-color: var(--accent); }
+
+  /* ── 右侧理解面板 ─────────────────────────── */
+  aside { display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 16px; padding: 16px 18px;
+  }
+  .panel h2 {
+    font-size: 13px; font-weight: 700; letter-spacing: .06em;
+    color: var(--muted); text-transform: uppercase; margin-bottom: 12px;
+  }
+  .req-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 5px 0; font-size: 13px; }
+  .req-row .k { color: var(--muted); flex: none; }
+  .req-row .v { text-align: right; word-break: break-all; }
+  .req-row .v.empty { color: rgba(255,255,255,.22); font-style: italic; }
+  .req-row .v.filled { color: var(--accent-2); }
+
+  .funnel { display: flex; flex-direction: column; gap: 6px; }
+  .fstep { position: relative; height: 30px; border-radius: 8px; overflow: hidden; background: rgba(255,255,255,.05); }
+  .fstep .bar {
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(108,140,255,.35), rgba(56,214,180,.28));
+    transform-origin: left; transition: transform .6s cubic-bezier(.2,.8,.2,1);
+  }
+  .fstep .lbl {
+    position: relative; z-index: 1; height: 100%;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 10px; font-size: 12px;
+  }
+  .fstep .lbl b { font-weight: 600; }
+  .relax { font-size: 12px; color: var(--warn); margin-top: 8px; line-height: 1.6; }
+  .latency { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+  .typing { display: inline-flex; gap: 4px; padding: 4px 2px; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 30% { opacity: .25; } }
+
+  .toast {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%) translateY(-8px);
+    background: rgba(255,122,122,.14); border: 1px solid rgba(255,122,122,.4);
+    color: #ffc9c9; font-size: 13px; padding: 9px 18px; border-radius: 12px;
+    opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; z-index: 50;
+  }
+  .toast.on { opacity: 1; transform: translateX(-50%); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6c8cff"/>
+      <stop offset="100%" stop-color="#38d6b4"/>
+    </linearGradient>
+    <g id="logo-bag">
+      <path d="M9.5 12.5h13l-1.4 10.2a2.8 2.8 0 0 1-2.8 2.6h-4.6a2.8 2.8 0 0 1-2.8-2.6L9.5 12.5Z"/>
+      <path d="M12.8 12.5v-1.7a3.2 3.2 0 0 1 6.4 0v1.7" fill="none" stroke-width="1.9" stroke-linecap="round"/>
+    </g>
+  </defs>
+</svg>
+
+<header>
+  <svg class="logo" viewBox="0 0 32 32" role="img" aria-label="ShopMind 标志">
+    <rect width="32" height="32" rx="9" fill="url(#logoGrad)"/>
+    <use href="#logo-bag" fill="#0b1020" stroke="#0b1020"/>
+    <circle cx="13.6" cy="18.6" r="1.2" fill="#38d6b4"/>
+    <circle cx="18.4" cy="18.6" r="1.2" fill="#6c8cff"/>
+  </svg>
+  <div>
+    <h1>ShopMind 导购 Agent</h1>
+    <div class="sub">LangGraph 编排 · 混合检索 · 可溯源推荐</div>
+  </div>
+  <div class="spacer"></div>
+  <span class="badge" id="catalog-badge">目录加载中…</span>
+  <button class="ghost" id="new-session">新会话</button>
+</header>
+
+<main>
+  <section id="chat">
+    <div id="messages"></div>
+
+    <div class="composer">
+      <div class="awaiting" id="awaiting-hint">它在等你的回答 —— 直接回复即可继续（最多追问 2 轮）</div>
+      <div class="inputbox">
+        <textarea id="input" rows="1" placeholder="描述你的需求，例如：预算1500以内，买个主动降噪的无线耳机，通勤用"></textarea>
+        <button class="send" id="send">发送</button>
+      </div>
+      <div class="hints">
+        <span class="hint">预算1500的主动降噪耳机，通勤用</span>
+        <span class="hint">帮我妈挑个礼物</span>
+        <span class="hint">再便宜点，不要三星</span>
+      </div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="panel">
+      <h2>结构化理解</h2>
+      <div class="req-row"><span class="k">类目</span><span class="v empty" data-req="category">未识别</span></div>
+      <div class="req-row"><span class="k">预算</span><span class="v empty" data-req="budget">未识别</span></div>
+      <div class="req-row"><span class="k">关键属性</span><span class="v empty" data-req="attributes">未识别</span></div>
+      <div class="req-row"><span class="k">使用场景</span><span class="v empty" data-req="scene">未识别</span></div>
+      <div class="req-row"><span class="k">送给谁</span><span class="v empty" data-req="recipient">未识别</span></div>
+      <div class="req-row"><span class="k">排除项</span><span class="v empty" data-req="exclusions">无</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>检索漏斗</h2>
+      <div class="funnel">
+        <div class="fstep"><div class="bar" id="bar-total" style="transform:scaleX(0)"></div><div class="lbl"><span>全量目录</span><b id="num-total">—</b></div></div>
+        <div class="fstep"><div class="bar" id="bar-filter" style="transform:scaleX(0)"></div><div class="lbl"><span>硬过滤后</span><b id="num-filter">—</b></div></div>
+        <div class="fstep"><div class="bar" id="bar-recall" style="transform:scaleX(0)"></div><div class="lbl"><span>语义召回</span><b id="num-recall">—</b></div></div>
+      </div>
+      <div class="relax" id="relax"></div>
+      <div class="latency" id="latency"></div>
+    </div>
+  </aside>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const messagesEl = $("messages");
+const inputEl = $("input");
+const sendBtn = $("send");
+let threadId = crypto.randomUUID();
+let busy = false;
+let awaiting = false;
+
+const PIPELINE = [
+  ["understand", "理解需求"],
+  ["clarify", "按需追问"],
+  ["retrieve", "混合检索"],
+  ["rank_and_explain", "排序 + 理由"],
+];
+
+// ── 渲染工具 ─────────────────────────────────
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+const BOT_GLYPH = `<svg class="glyph" viewBox="0 0 32 32" aria-hidden="true"><use href="#logo-bag" fill="rgba(255,255,255,.92)" stroke="rgba(255,255,255,.92)"/><circle cx="13.6" cy="18.6" r="1.3" fill="#0b1020"/><circle cx="18.4" cy="18.6" r="1.3" fill="#0b1020"/></svg>`;
+
+function addMsg(role, html, cls) {
+  const wrap = document.createElement("div");
+  wrap.className = `msg ${role}${cls ? " " + cls : ""}`;
+  wrap.innerHTML = `<div class="avatar">${role === "user" ? "我" : BOT_GLYPH}</div><div class="bubble${cls ? " " + cls : ""}">${html}</div>`;
+  messagesEl.appendChild(wrap);
+  scrollBottom();
+  return wrap;
+}
+
+function scrollBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+
+function addTyping() {
+  const el = addMsg("bot", `<span class="typing"><i></i><i></i><i></i></span>`);
+  el.dataset.typing = "1";
+  return el;
+}
+
+function removeTyping() {
+  messagesEl.querySelectorAll("[data-typing]").forEach((e) => e.remove());
+}
+
+function pipelineEl() {
+  let el = messagesEl.querySelector(".pipeline.live");
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "pipeline live";
+    el.innerHTML = PIPELINE.map(([k, label], i) =>
+      `${i ? `<span class="sep">→</span>` : ""}<span class="step" data-stage="${k}"><span class="dot"></span>${label}</span>`
+    ).join("");
+    messagesEl.appendChild(el);
+  }
+  return el;
+}
+
+function setStage(stage) {
+  const el = pipelineEl();
+  let seen = false;
+  el.querySelectorAll(".step").forEach((s) => {
+    if (s.dataset.stage === stage) { s.classList.add("active"); seen = true; }
+    else if (!seen) { s.classList.remove("active"); s.classList.add("done"); }
+  });
+  scrollBottom();
+}
+
+function finalizePipeline() {
+  const el = messagesEl.querySelector(".pipeline.live");
+  if (el) {
+    el.classList.remove("live");
+    el.querySelectorAll(".step").forEach((s) => { s.classList.remove("active"); s.classList.add("done"); });
+  }
+}
+
+function reasonCard(rec) {
+  const pct = Math.max(2, Math.min(100, Math.round(rec.score * 100)));
+  return `
+    <div class="card">
+      <div class="rank">${rec.rank}</div>
+      <div class="name">${esc(rec.name)}</div>
+      <div class="price">¥${rec.price.toFixed(0)} <small>起</small></div>
+      <div class="chips"><span class="chip">${esc(rec.brand)}</span><span class="chip">${esc(rec.category)}</span></div>
+      <div class="meta">匹配分 ${rec.score.toFixed(2)}<span class="src-badge ${rec.reason_source}">${rec.reason_source === "llm" ? "LLM 生成" : "模板降级"}</span><div class="scorebar"><i style="width:${pct}%"></i></div></div>
+      <div class="reason">${esc(rec.reason)}</div>
+    </div>`;
+}
+
+function renderRequirements(req) {
+  const set = (key, text, filled) => {
+    const el = document.querySelector(`[data-req="${key}"]`);
+    el.textContent = text;
+    el.className = "v " + (filled ? "filled" : "empty");
+  };
+  if (!req) return;
+  set("category", req.category || "未识别", !!req.category);
+  const lo = req.budget_min, hi = req.budget_max;
+  const budget = lo && hi ? `¥${lo.toFixed(0)} ~ ¥${hi.toFixed(0)}` : hi ? `≤ ¥${hi.toFixed(0)}` : lo ? `≥ ¥${lo.toFixed(0)}` : "未识别";
+  set("budget", budget, !!(lo || hi));
+  set("attributes", (req.attributes || []).join("、") || "未识别", (req.attributes || []).length > 0);
+  set("scene", req.scene || "未识别", !!req.scene);
+  set("recipient", req.recipient || "未识别", !!req.recipient);
+  set("exclusions", (req.exclusions || []).join("、") || "无", false);
+}
+
+function renderFunnel(trace, req) {
+  if (!trace) return;
+  const total = Math.max(trace.total_catalog, 1);
+  $("num-total").textContent = trace.total_catalog;
+  $("num-filter").textContent = trace.after_filter;
+  $("num-recall").textContent = trace.recalled;
+  $("bar-total").style.transform = "scaleX(1)";
+  $("bar-filter").style.transform = `scaleX(${trace.after_filter / total})`;
+  $("bar-recall").style.transform = `scaleX(${trace.recalled / total})`;
+  $("relax").textContent = trace.relaxations.length ? `约束放宽：${trace.relaxations.join("；")}` : "";
+}
+
+function showToast(text) {
+  const t = $("toast");
+  t.textContent = text;
+  t.classList.add("on");
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove("on"), 3200);
+}
+
+function setAwaiting(on, rounds) {
+  awaiting = on;
+  const el = $("awaiting-hint");
+  el.classList.toggle("on", on);
+  if (on) el.textContent = `它在等你的回答（已追问 ${rounds || 1}/2 轮）—— 直接回复即可继续`;
+  inputEl.placeholder = on ? "回答它的追问，或直接换需求…" : "描述你的需求，例如：预算1500以内，买个主动降噪的无线耳机，通勤用";
+}
+
+// ── SSE 流式发送 ─────────────────────────────
+async function send(text) {
+  if (busy || !text.trim()) return;
+  busy = true;
+  sendBtn.disabled = true;
+  inputEl.value = "";
+  inputEl.style.height = "auto";
+
+  addMsg("user", esc(text));
+  setAwaiting(false);
+  const typing = addTyping();
+
+  let cardsWrap = null;
+  const streamedReasons = {};   // product_id -> reason（流式先到，卡片到 result 再画）
+  let lastRequirements = null;
+  let lastTrace = null;
+
+  try {
+    const resp = await fetch("/api/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, thread_id: threadId }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop();
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data:")) continue;
+        const ev = JSON.parse(line.slice(5));
+        handleEvent(ev);
+      }
+    }
+  } catch (err) {
+    removeTyping();
+    finalizePipeline();
+    showToast(`出错了：${err.message || err}`);
+  } finally {
+    busy = false;
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+
+  function handleEvent(ev) {
+    switch (ev.type) {
+      case "stage":
+        removeTyping();
+        setStage(ev.stage);
+        break;
+
+      case "clarify_question":
+      case "awaiting_answer":
+        removeTyping();
+        if (!messagesEl.querySelector(`.bubble.clarify[data-round="${ev.round}"]`)) {
+          addMsg("bot", `<span class="tag">需要补充信息（追问 ${ev.round}/2）</span>${esc(ev.text)}`, "clarify");
+        }
+        break;
+
+      case "reason":
+        streamedReasons[ev.product_id] = ev;
+        break;
+
+      case "result":
+        removeTyping();
+        finalizePipeline();
+        lastRequirements = ev.requirements || lastRequirements;
+        lastTrace = ev.retrieval_trace || lastTrace;
+        renderRequirements(lastRequirements);
+        renderFunnel(lastTrace);
+        if (ev.clarify_question && !ev.recommendations) {
+          setAwaiting(true, ev.clarify_rounds);
+        } else if (ev.recommendations && ev.recommendations.length) {
+          cardsWrap = document.createElement("div");
+          cardsWrap.className = "cards";
+          cardsWrap.innerHTML = ev.recommendations.map((r, i) => reasonCard({ ...r, rank: i + 1 })).join("");
+          messagesEl.appendChild(cardsWrap);
+          scrollBottom();
+        } else {
+          addMsg("bot", "没有找到匹配的商品，可以换个条件再试试～");
+        }
+        break;
+
+      case "error":
+        removeTyping();
+        finalizePipeline();
+        showToast(ev.message);
+        break;
+    }
+  }
+}
+
+// ── 交互绑定 ─────────────────────────────────
+sendBtn.addEventListener("click", () => send(inputEl.value));
+inputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(inputEl.value); }
+});
+inputEl.addEventListener("input", () => {
+  inputEl.style.height = "auto";
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+});
+document.querySelectorAll(".hint").forEach((h) =>
+  h.addEventListener("click", () => { inputEl.value = h.textContent; send(h.textContent); })
+);
+$("new-session").addEventListener("click", () => {
+  threadId = crypto.randomUUID();
+  messagesEl.innerHTML = "";
+  setAwaiting(false);
+  renderRequirements(null);
+  document.querySelectorAll("[data-req]").forEach((el) => { el.textContent = "未识别"; el.className = "v empty"; });
+  document.querySelectorAll('[data-req="exclusions"]')[0].textContent = "无";
+  ["total", "filter", "recall"].forEach((k) => { $(`num-${k}`).textContent = "—"; $(`bar-${k}`).style.transform = "scaleX(0)"; });
+  $("relax").textContent = "";
+  addMsg("bot", "新会话已开始。告诉我你想买什么吧～");
+});
+
+fetch("/api/catalog/meta").then((r) => r.json()).then((m) => {
+  $("catalog-badge").textContent = `目录 ${m.version?.slice(0, 8) || ""} · ${m.count ?? ""} SKU`;
+}).catch(() => { $("catalog-badge").textContent = "目录信息不可用"; });
+
+addMsg("bot", "你好，我是 ShopMind。用一句话描述你的需求，我会从真实商品目录里筛选、排序，并给出可溯源的推荐理由。信息不全时我会先追问你。");
+</script>
+</body>
+</html>

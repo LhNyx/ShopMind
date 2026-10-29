@@ -10,14 +10,16 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import aiosqlite
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from shopmind.config import Settings, get_settings
@@ -91,6 +93,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
     )
 
+    @app.get("/", include_in_schema=False)
+    async def index() -> FileResponse:
+        return FileResponse(Path(__file__).parent / "static" / "index.html")
+
     @app.get("/api/health")
     async def health() -> dict:
         return {"status": "ok", "catalog_version": app.state.runtime.store.version}
@@ -100,10 +106,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return app.state.runtime.store.meta
 
     async def _run_graph(app: FastAPI, message: str, thread_id: str) -> dict:
-        inputs = {"messages": [HumanMessage(content=message)]}
+        graph = app.state.graph
         config = {"configurable": {"thread_id": thread_id}}
-        final = await app.state.graph.ainvoke(inputs, config)
-        return result_event(final)
+        # 上一轮停在 await_answer（interrupt）→ 这句话是对追问的回答，走 resume
+        if (await graph.aget_state(config)).next:
+            await graph.ainvoke(Command(resume=message), config)
+        else:
+            await graph.ainvoke({"messages": [HumanMessage(content=message)]}, config)
+        final = await graph.aget_state(config)
+        result = result_event(final.values)
+        result["awaiting_input"] = bool(final.next)
+        return result
 
     @app.post("/api/chat")
     async def chat(body: ChatRequest) -> dict:
@@ -123,18 +136,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
             yield sse({"type": "start", "thread_id": thread_id})
-            inputs = {"messages": [HumanMessage(content=body.message)]}
+            graph = app.state.graph
             config = {"configurable": {"thread_id": thread_id}}
             try:
+                if (await graph.aget_state(config)).next:
+                    inputs = Command(resume=body.message)
+                else:
+                    inputs = {"messages": [HumanMessage(content=body.message)]}
                 # custom：节点内 writer 事件实时透传；updates：取终态组 result
-                async for mode, chunk in app.state.graph.astream(
+                async for mode, chunk in graph.astream(
                     inputs, config, stream_mode=["custom", "updates"]
                 ):
                     if mode == "custom":
                         yield sse(chunk)
-                final = await app.state.graph.aget_state(config)
+                final = await graph.aget_state(config)
                 result = result_event(final.values)
                 result["thread_id"] = thread_id
+                result["awaiting_input"] = bool(final.next)
                 yield sse(result)
             except Exception as exc:  # noqa: BLE001 — 错误也以事件形式给客户端
                 yield sse({"type": "error", "message": str(exc)})
