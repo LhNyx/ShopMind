@@ -46,7 +46,11 @@ class LLMRequirementsExtractor:
         # 第一级：结构化输出（function calling 约束，替代自由文本拼接）
         try:
             result = await self._model.with_structured_output(Requirements).ainvoke(prompt)
-            return _normalize(result)
+            result = _normalize(result)
+            if not _has_mojibake(result):
+                return result
+            # 流式聚合偶发把多字节汉字切碎成 U+FFFD 替换字符（中转端点 bug），
+            # tool-call 参数路径中招 → 换纯文本 JSON 路径重试，几乎必然干净
         except Exception:  # noqa: BLE001 — 兼容端点不支持 function calling 等情况
             pass
 
@@ -55,7 +59,7 @@ class LLMRequirementsExtractor:
             retry_prompt = self._build_messages(messages, prev, _JSON_RETRY_SUFFIX)
             raw = await self._model.ainvoke(retry_prompt)
             content = raw.content if isinstance(raw.content, str) else str(raw.content)
-            return _parse_json_requirements(content)
+            return _strip_mojibake(_parse_json_requirements(content))
         except Exception as exc:  # noqa: BLE001
             raise ExtractionError(str(exc)) from exc
 
@@ -99,6 +103,31 @@ def _normalize(req: Requirements) -> Requirements:
         req.budget_max = None
     req.missing_fields = []
     return req
+
+
+_MOJIBAKE = "\ufffd"  # 替换字符：流式分片切碎多字节汉字后解码失败的产物
+
+
+def _has_mojibake(req: Requirements) -> bool:
+    fields = [
+        req.category or "",
+        req.scene or "",
+        req.recipient or "",
+        *req.attributes,
+        *req.exclusions,
+    ]
+    return any(_MOJIBAKE in f for f in fields)
+
+
+def _strip_mojibake(req: Requirements) -> Requirements:
+    """第二级仍中招时的兜底：剥掉替换字符，宁可属性短一截也不把乱码带进检索。"""
+    clean = lambda s: s.replace(_MOJIBAKE, "") if s else s  # noqa: E731
+    req.category = clean(req.category) or None
+    req.scene = clean(req.scene) or None
+    req.recipient = clean(req.recipient) or None
+    req.attributes = [a for a in (clean(a) for a in req.attributes) if a]
+    req.exclusions = [e for e in (clean(e) for e in req.exclusions) if e]
+    return _normalize(req)
 
 
 def latest_user_text(messages: list[AnyMessage]) -> str:

@@ -40,7 +40,8 @@ class LLMClarifyQuestioner:
             async for chunk in self._model.astream(prompt):
                 piece = chunk.content if isinstance(chunk.content, str) else ""
                 content += piece
-            content = content.strip().strip('"「」')
+            # 剥掉流式乱码替换字符：用户可见文本，宁缺一字不现 �
+            content = content.replace("\ufffd", "").strip().strip('"「」')
             return content or _FALLBACK_QUESTIONS.get(field, "能再描述一下您的需求吗？")
         except Exception:  # noqa: BLE001 — 追问失败不影响主链路
             return _FALLBACK_QUESTIONS.get(field, "能再描述一下您的需求吗？")

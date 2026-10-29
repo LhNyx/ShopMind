@@ -80,7 +80,8 @@ def _parse_line(line: str) -> tuple[str, str] | None:
     if "|" not in line:
         return None
     pid, _, reason = line.partition("|")
-    pid, reason = pid.strip(), reason.strip()
+    # 剥掉流式乱码替换字符（中转端点偶发切碎多字节汉字）
+    pid, reason = pid.replace("\ufffd", "").strip(), reason.replace("\ufffd", "").strip()
     if pid and reason:
         return pid, reason
     return None
