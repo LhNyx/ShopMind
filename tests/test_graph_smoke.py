@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
 
 from shopmind.config import Settings
 from shopmind.graph.build import build_graph
@@ -64,11 +65,23 @@ async def test_complete_info_goes_direct(store, embedder):
 
 async def test_missing_info_clarifies_then_guardrail_releases(store, embedder):
     graph = make_graph(FakeExtractor(Requirements()), store, embedder)  # 永远提不出信息
-    final = await graph.ainvoke(
-        {"messages": [HumanMessage(content="帮我挑个礼物")], "clarify_rounds": 0},
-        {"configurable": {"thread_id": "t2"}},
+    config = {"configurable": {"thread_id": "t2"}}
+    await graph.ainvoke(
+        {"messages": [HumanMessage(content="帮我挑个礼物")], "clarify_rounds": 0}, config
     )
-    # 恰好追问 2 轮后被护栏放行
+    # 第 1 轮追问后 interrupt 挂起，等人回答——不是一轮连问两遍
+    snap = await graph.aget_state(config)
+    assert snap.next, "缺信息时应停在 await_answer 等用户"
+    assert snap.values["clarify_rounds"] == 1
+
+    await graph.ainvoke(Command(resume="随便"), config)
+    snap = await graph.aget_state(config)
+    assert snap.next, "仍缺信息 → 第 2 轮继续追问"
+    assert snap.values["clarify_rounds"] == 2
+
+    await graph.ainvoke(Command(resume="随便"), config)
+    final = (await graph.aget_state(config)).values
+    # 第 2 轮后护栏放行：即使仍缺信息也出结果
     assert final["clarify_rounds"] == 2
     assert final["recommendations"], "护栏放行后必须出结果（带缺口检索）"
     assert len(final["candidates"]) == 5  # 无约束 → 全目录进入检索，top_n=5 截断

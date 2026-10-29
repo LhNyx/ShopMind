@@ -19,5 +19,6 @@ data/eval/metrics*.json
 
 # 运行时产物
 *.sqlite
+*.sqlite-*
 *.sqlite3
 uv.lock

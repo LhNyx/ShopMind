@@ -1,4 +1,4 @@
-"""四个图节点：understand / clarify / retrieve / rank_and_explain。
+"""五个图节点：understand / clarify / await_answer / retrieve / rank_and_explain。
 
 节点是纯函数：读 State → 调依赖 → 返回增量 dict。
 流式事件通过 langgraph 的 custom stream writer 发给 SSE 层，
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from shopmind.config import Settings
 from shopmind.graph.ports import ClarifyQuestioner, ReasonGenerator, RequirementsExtractor
@@ -25,6 +25,8 @@ try:  # langgraph 1.x；不存在时为离线/测试模式，静默降级
     from langgraph.config import get_stream_writer
 except ImportError:  # pragma: no cover
     get_stream_writer = None
+
+from langgraph.types import interrupt
 
 _CLARIFY_LABEL = {"budget": "预算", "category": "品类"}
 
@@ -87,6 +89,31 @@ def make_clarify_node(questioner: ClarifyQuestioner):
         }
 
     return clarify
+
+
+# ── await_answer：interrupt 挂起，等用户回答后由 checkpoint 恢复 ────────────
+
+
+def make_await_answer_node():
+    """把「追问后等回答」做成独立节点：问题生成只跑一次，恢复时不重复调 LLM。"""
+
+    async def await_answer(state: dict) -> dict:
+        _emit(
+            {
+                "type": "awaiting_answer",
+                "round": state.get("clarify_rounds", 0),
+                "text": state.get("clarify_question"),
+            }
+        )
+        answer = interrupt(
+            {"question": state.get("clarify_question"), "round": state.get("clarify_rounds", 0)}
+        )
+        return {
+            "messages": [HumanMessage(content=str(answer))],
+            "clarify_question": None,
+        }
+
+    return await_answer
 
 
 # ── retrieve：硬过滤 + 语义召回 ─────────────────────────────────────────────
@@ -205,6 +232,7 @@ def _template_reason(p, req) -> str:
 
 
 __all__ = [
+    "make_await_answer_node",
     "make_clarify_node",
     "make_rank_and_explain_node",
     "make_retrieve_node",
