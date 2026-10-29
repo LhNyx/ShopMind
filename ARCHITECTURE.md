@@ -75,9 +75,9 @@ class Product(BaseModel):
 │                                                                          │
 │   POST /api/chat/stream ──► LangGraph                                    │
 │                                                                          │
-│   understand ──(need_clarify 且 rounds<2)──► clarify ──┐                 │
-│       ▲                                                │                 │
-│       └──────────────── 回边（循环）◄──────────────────┘                 │
+│   understand ──(need_clarify 且 rounds<2)──► clarify ──► await_answer ─┐  │
+│       ▲                                              interrupt() 挂起   │  │
+│       └──────────────── 用户回答后 resume（回边）◄─────────────────────┘  │
 │       │                                                                  │
 │     (否则) retrieve ──► rank_and_explain ──► END                          │
 │                                                                          │
@@ -114,10 +114,11 @@ class RecommendationState(TypedDict, total=False):
 
 - `understand` 节点：`chat_model.with_structured_output(Requirements)`；**解析失败重试 1 次 → 降级规则提取**（正则抽预算数字、词典匹配类目），保证链路永不因 LLM 输出问题中断
 - `clarify` 节点：只针对 `missing_fields` 里最关键的一个缺口生成追问（缺预算问预算、缺类目问类目），不泛泛而问
+- `await_answer` 节点：`interrupt()` 真正挂起等人（checkpoint 保存现场）；HTTP 侧下一句带同一 `thread_id` 的话就是回答，用 `Command(resume=...)` 续跑。问题只在 clarify 生成一次，恢复时不重复调 LLM
 
 ### 3.2 图与护栏（简历 bullet 1）
 
-- 四节点：`understand → clarify → retrieve → rank_and_explain`，条件边 + 回边
+- 五节点：`understand → clarify → await_answer → retrieve → rank_and_explain`，条件边 + 回边
 - 路由：`need_clarify and clarify_rounds < 2 → clarify，否则 retrieve`（2 轮后强制放行，带缺口检索好过把用户问烦）
 - 节点纯函数：只读 State、返回增量 dict，全链路状态可追溯（checkpoint 回放的基石）
 

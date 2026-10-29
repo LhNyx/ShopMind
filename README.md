@@ -37,6 +37,7 @@ curl -N -X POST localhost:8000/api/chat/stream \
 ```
 
 事件流：`start → stage(正在理解需求) → stage(候选 1200 → 过滤后 10 → 召回 10) → reason×5（逐条流出）→ result → done`
+信息不足时：`… → clarify_question → result(clarify_question, awaiting_input=true) → done`，此时图停在 `interrupt()`；带同一 `thread_id` 再发一句就是回答（`Command(resume=…)` 续跑），最多追问 2 轮后带缺口强出结果。
 
 **非流式**（评测/脚本用）：`POST /api/chat`，body 相同。
 **多轮反馈**：带同一 `thread_id` 再发「再便宜点，不要三星」——需求合并（预算收紧、黑名单累加）后重新检索。
@@ -80,7 +81,7 @@ v3 → v4 同目录同评测集：**修复 29 条坏例**，指标变化与坏�
 
 | 简历描述 | 代码 | 验证 |
 |---|---|---|
-| LangGraph 编排图 + 条边 + 2 轮护栏 + 纯函数节点 | `graph/build.py` `graph/nodes.py` | `pytest tests/test_routing.py` 场景2追问2轮放行：`run_demo.py` |
+| LangGraph 编排图 + 条件边 + 2 轮护栏 + interrupt 挂起 + 纯函数节点 | `graph/build.py` `graph/nodes.py` | `pytest tests/test_graph_smoke.py`；`run_demo.py` 场景2 追问 2 轮后放行 |
 | Pydantic Schema 结构化提取 + 重试降级 | `llm/extractor.py` `graph/rules.py` | `test_graph_smoke.py::test_extraction_failure_falls_back_to_rules` |
 | 混合检索：硬过滤在前 + FAISS 语义召回 | `retrieval/filters.py` `retrieval/retriever.py` | `run_eval.py` 指标 + `test_retrieval.py` |
 | 可溯源推荐（仅引用目录字段抑制幻觉） | `llm/reasons.py` `nodes._reason_consistent` | `test_reasons.py`（编造价格→拦截降级模板） |
